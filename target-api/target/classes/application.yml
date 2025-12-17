@@ -1,0 +1,42 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: target-api
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "health,info,prometheus"
+  tracing:
+    sampling:
+      probability: 1.0
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+# OpenTelemetry configuration
+otel:
+  exporter:
+    otlp:
+      endpoint: http://localhost:4317
+      protocol: grpc
+  resource:
+    attributes:
+      service.name: ${spring.application.name}
+  propagators:
+    text-map-propagators: "tracecontext,baggage"
+
+---
+# Docker-specific profile
+spring:
+  config:
+    activate:
+      on-profile: docker
+
+otel:
+  exporter:
+    otlp:
+      endpoint: http://jaeger:4317

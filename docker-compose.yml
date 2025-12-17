@@ -1,0 +1,185 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: aare_postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-aare_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aare_password}
+      POSTGRES_DB: ${POSTGRES_DB:-aare_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/migrations:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aare_user} -d ${POSTGRES_DB:-aare_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3.11-management
+    container_name: aare_rabbitmq
+    ports:
+      - "5672:5672"  # AMQP
+      - "15672:15672" # Management UI
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-guest}
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.48
+    container_name: aare_jaeger
+    ports:
+      - "6831:6831/udp" # Agent
+      - "16686:16686"   # UI
+      - "14268:14268"   # Collector
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+
+  prometheus:
+    image: prom/prometheus:v2.47.0
+    container_name: aare_prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+
+  grafana:
+    image: grafana/grafana:10.1.5
+    container_name: aare_grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./infra/grafana/provisioning/:/etc/grafana/provisioning/
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+
+  target-api:
+    build:
+      context: ./target-api
+      dockerfile: Dockerfile
+    container_name: aare_target_api
+    ports:
+      - "8081:8080"
+    depends_on:
+      - jaeger
+    environment:
+      - OTEL_SERVICE_NAME=target-api
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
+      - LOGGING_LEVEL_ROOT=INFO
+
+  gateway:
+    build:
+      context: ./gateway
+      dockerfile: Dockerfile
+    container_name: aare_gateway
+    ports:
+      - "8080:8080"
+    depends_on:
+      - target-api
+      - rabbitmq
+      - jaeger
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - SPRING_RABBITMQ_HOST=rabbitmq
+      - OTEL_SERVICE_NAME=gateway
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
+      - LOGGING_LEVEL_ROOT=INFO
+
+  collector:
+    build:
+      context: ./collector
+      dockerfile: Dockerfile
+    container_name: aare_collector
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      jaeger:
+        condition: service_started
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/${POSTGRES_DB:-aare_db}
+      - SPRING_DATASOURCE_USERNAME=${POSTGRES_USER:-aare_user}
+      - SPRING_DATASOURCE_PASSWORD=${POSTGRES_PASSWORD:-aare_password}
+      - SPRING_RABBITMQ_HOST=rabbitmq
+      - OTEL_SERVICE_NAME=collector
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
+      - LOGGING_LEVEL_ROOT=INFO
+
+  analyzer:
+    build:
+      context: ./analyzer
+      dockerfile: Dockerfile
+    container_name: aare_analyzer
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      collector:
+        condition: service_started
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/${POSTGRES_DB:-aare_db}
+      - SPRING_DATASOURCE_USERNAME=${POSTGRES_USER:-aare_user}
+      - SPRING_DATASOURCE_PASSWORD=${POSTGRES_PASSWORD:-aare_password}
+      - SPRING_RABBITMQ_HOST=rabbitmq
+      - OTEL_SERVICE_NAME=analyzer
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
+      - LOGGING_LEVEL_ROOT=INFO
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+
+  incident-api:
+    build:
+      context: ./incident-api
+      dockerfile: Dockerfile
+    container_name: aare_incident_api
+    ports:
+      - "8088:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      analyzer:
+        condition: service_started # Incident API depends on Analyzer generating incidents
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/${POSTGRES_DB:-aare_db}
+      - SPRING_DATASOURCE_USERNAME=${POSTGRES_USER:-aare_user}
+      - SPRING_DATASOURCE_PASSWORD=${POSTGRES_PASSWORD:-aare_password}
+      - OTEL_SERVICE_NAME=incident-api
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
+      - LOGGING_LEVEL_ROOT=INFO
+      - AARE_ADMIN_USER=${AARE_ADMIN_USER:-admin}
+      - AARE_ADMIN_PASSWORD=${AARE_ADMIN_PASSWORD:-password}
+      - AARE_JWT_SECRET=${AARE_JWT_SECRET:-your-super-secret-key-that-is-long-enough}
+
+  ui:
+    build:
+      context: ./ui
+      dockerfile: Dockerfile
+    container_name: aare_ui
+    ports:
+      - "3001:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://incident-api:8080/api
+      - NEXTAUTH_URL=http://localhost:3001
+      - NEXTAUTH_SECRET=${AARE_JWT_SECRET:-your-super-secret-key-that-is-long-enough}
+    depends_on:
+      - incident-api
+
+volumes:
+  postgres_data:

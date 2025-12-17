@@ -1,0 +1,64 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: incident-api
+  jpa:
+    hibernate:
+      ddl-auto: validate # Database schema is managed externally by Flyway in the infra module
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+  datasource:
+    url: jdbc:postgresql://localhost:5432/aare_db
+    username: aare_user
+    password: aare_password
+    driver-class-name: org.postgresql.Driver
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "health,info,prometheus"
+  tracing:
+    sampling:
+      probability: 1.0
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+# OpenTelemetry configuration
+otel:
+  exporter:
+    otlp:
+      endpoint: http://localhost:4317
+      protocol: grpc
+  resource:
+    attributes:
+      service.name: ${spring.application.name}
+  propagators:
+    text-map-propagators: "tracecontext,baggage"
+
+# JWT Configuration
+aare:
+  jwt:
+    secret: ${AARE_JWT_SECRET:your-super-secret-key-that-is-long-enough-for-hashing}
+    expiration-ms: ${AARE_JWT_EXPIRATION_MS:3600000} # 1 hour
+  admin:
+    username: ${AARE_ADMIN_USER:admin}
+    password: ${AARE_ADMIN_PASSWORD:admin}
+
+---
+# Docker-specific profile
+spring:
+  config:
+    activate:
+      on-profile: docker
+  datasource:
+    url: jdbc:postgresql://postgres:5432/aare_db
+
+otel:
+  exporter:
+    otlp:
+      endpoint: http://jaeger:4317

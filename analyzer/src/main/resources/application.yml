@@ -1,0 +1,93 @@
+server:
+  port: 3001
+
+spring:
+  application:
+    name: analyzer
+
+  datasource:
+    url: jdbc:postgresql://127.0.0.1:5432/aare
+    username: aare
+    password: aare
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "health,info,prometheus"
+  tracing:
+    sampling:
+      probability: 1.0
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+# OpenTelemetry configuration
+otel:
+  exporter:
+    otlp:
+      endpoint: http://localhost:4317
+      protocol: grpc
+  resource:
+    attributes:
+      service.name: ${spring.application.name}
+  propagators:
+    text-map-propagators: "tracecontext,baggage"
+
+# RabbitMQ settings for Analyzer
+aare:
+  analyzer:
+    schedule:
+      fixed-rate-ms: 60000 # Run every 60 seconds
+  incident:
+    detection:
+      error-spike:
+        threshold: 0.1 # 10% error rate
+        factor: 2.0 # 2x the baseline
+        min-requests: 20 # Need at least 20 requests in window
+      latency-regression:
+        p95-factor: 1.5 # 1.5x the baseline p95
+        min-requests: 20
+      traffic-drop:
+        factor: 0.5 # A 50% drop from baseline
+        min-requests-baseline: 50 # Baseline must be at least 50 requests
+
+# OpenAI configuration (optional)
+openai:
+  api:
+    key: ${OPENAI_API_KEY:} # Reads from environment variable
+    base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1/}
+    model: ${OPENAI_MODEL:gpt-3.5-turbo}
+    timeout: 60 # in seconds
+
+---
+# Docker-specific profile
+spring:
+  config:
+    activate:
+      on-profile: docker
+  datasource:
+    url: jdbc:postgresql://postgres:5432/aare
+    username: aare
+    password: aare
+  rabbitmq:
+    host: rabbitmq
+
+otel:
+  exporter:
+    otlp:
+      endpoint: http://jaeger:4317

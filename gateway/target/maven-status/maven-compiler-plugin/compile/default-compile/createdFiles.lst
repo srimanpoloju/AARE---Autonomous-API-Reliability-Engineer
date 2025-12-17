@@ -1,0 +1,5 @@
+com/aare/gateway/GatewayApplication.class
+com/aare/gateway/filter/TrafficCaptureFilter$1.class
+com/aare/gateway/config/RabbitConfig.class
+com/aare/gateway/filter/BodyCaptureResponse.class
+com/aare/gateway/filter/TrafficCaptureFilter.class
