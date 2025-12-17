@@ -4,17 +4,17 @@ server:
 spring:
   application:
     name: collector
-  jpa:
-    hibernate:
-      ddl-auto: validate # Database schema is managed externally
-    properties:
-      hibernate:
-        dialect: org.hibernate.dialect.PostgreSQLDialect
+
   datasource:
     url: jdbc:postgresql://localhost:5432/aare_db
     username: aare_user
     password: aare_password
     driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: validate # keep strict by default
+
   rabbitmq:
     host: localhost
     port: 5672
@@ -33,7 +33,6 @@ management:
     tags:
       application: ${spring.application.name}
 
-# OpenTelemetry configuration
 otel:
   exporter:
     otlp:
@@ -45,7 +44,16 @@ otel:
   propagators:
     text-map-propagators: "tracecontext,baggage"
 
+---
+# LOCAL profile: auto-create missing tables
+spring:
+  config:
+    activate:
+      on-profile: local
 
+  jpa:
+    hibernate:
+      ddl-auto: update
 
 ---
 # Docker-specific profile
@@ -53,8 +61,10 @@ spring:
   config:
     activate:
       on-profile: docker
+
   datasource:
     url: jdbc:postgresql://postgres:5432/aare_db
+
   rabbitmq:
     host: rabbitmq
 

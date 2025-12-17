@@ -1,6 +1,5 @@
 com/aare/collector/model/JsonMapConverter.class
 com/aare/collector/model/ApiEvent.class
-com/aare/collector/model/ApiEventRepository.class
 com/aare/collector/config/RabbitConfig.class
 com/aare/collector/model/JsonMapConverter$1.class
 com/aare/collector/service/ApiEventListener.class

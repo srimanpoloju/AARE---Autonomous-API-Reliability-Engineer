@@ -1,0 +1,20 @@
+server:
+  port: 8081
+
+spring:
+  cloud:
+    gateway:
+      routes:
+        - id: target_api_route
+          uri: http://localhost:8085
+          predicates:
+            - Path=/api/target-api/**
+          filters:
+            - RewritePath=/api/target-api/(?<segment>.*), /api/${segment}
+
+        - id: incident_api_route
+          uri: http://localhost:8088
+          predicates:
+            - Path=/api/incidents/**, /api/health/**
+          filters:
+            - RewritePath=/api/(?<segment>.*), /api/${segment}
