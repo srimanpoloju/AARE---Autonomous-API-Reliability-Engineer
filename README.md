@@ -98,7 +98,7 @@ Observability:
 ### 1. Clone and setup
 
 ```bash
-git clone https://github.com/srimanpoloju/AARE---Autonomous-API-Reliability-Engineer.git
+git clone https://github.com/srimanpoloju/AARE-Autonomous-API-Reliability-Engineer.git
 cd aare
 cp .env.example .env
 ```
